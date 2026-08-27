@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Floating Parameters</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <h1 class="visually-hidden">Floating Parameters</h1>
+  <section class="context-row" aria-label="Active design">
+    <div id="documentName" class="document-name" title="Waiting for Fusion…">Waiting for Fusion…</div>
+    <div class="context-actions">
+      <button id="newParameterButton" class="context-button" title="Create a user parameter">+ New</button>
+      <button id="refreshButton" class="icon-button" title="Refresh" aria-label="Refresh">↻</button>
+    </div>
+  </section>
+
+  <section class="toolbar">
+    <label class="bloodhound-toggle" title="Highlight parameters used by the selected Fusion dimension or feature">
+      <input id="bloodhoundToggle" type="checkbox">
+      <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+      <span>Bloodhound</span>
+    </label>
+    <input id="searchInput" type="search" placeholder="Filter parameters…" autocomplete="off">
+    <span id="count" class="count"></span>
+  </section>
+
+  <main>
+    <div id="message" class="message">Loading parameters…</div>
+    <div id="tableWrap" class="table-wrap" hidden>
+      <table>
+        <colgroup>
+          <col id="nameColumn" style="width: 40%">
+          <col id="expressionColumn" style="width: 38%">
+          <col id="valueColumn" style="width: 22%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Parameter<div class="resize-handle" data-divider="0" title="Drag to resize columns"></div></th>
+            <th>Expression<div class="resize-handle" data-divider="1" title="Drag to resize columns"></div></th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody id="parameterRows"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <footer>
+    <div id="status" class="status" role="status"></div>
+    <label class="quick-save-toggle" title="When enabled, Enter applies only the active parameter">
+      <input id="quickSaveToggle" type="checkbox">
+      <span>QuickSave</span>
+    </label>
+    <button id="applyButton" class="primary" disabled>Apply changes</button>
+  </footer>
+
+  <div id="createOverlay" class="overlay" hidden>
+    <form id="createForm" class="create-card">
+      <h2>New user parameter</h2>
+      <label>
+        Name
+        <input id="newName" name="name" required autocomplete="off" placeholder="LegWidth">
+      </label>
+      <label>
+        Expression
+        <input id="newExpression" name="expression" required autocomplete="off" placeholder="25 mm or OtherWidth * 2">
+      </label>
+      <label>
+        Units
+        <input id="newUnits" name="units" autocomplete="off" placeholder="mm, in, deg, or leave blank">
+      </label>
+      <label>
+        Comment <span class="optional">optional</span>
+        <input id="newComment" name="comment" autocomplete="off" placeholder="What this parameter controls">
+      </label>
+      <div id="createError" class="form-error" role="alert"></div>
+      <div class="form-actions">
+        <button id="cancelCreateButton" type="button">Cancel</button>
+        <button id="createParameterButton" type="submit" class="primary">Create parameter</button>
+      </div>
+    </form>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
