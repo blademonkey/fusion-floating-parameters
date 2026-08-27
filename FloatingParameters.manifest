@@ -1,0 +1,12 @@
+{
+  "autodeskProduct": "Fusion360",
+  "type": "addin",
+  "id": "6d2c9448-4c50-4ba0-8f35-e9c096f6c5e2",
+  "author": "blademonkey",
+  "description": {
+    "": "Edit Fusion user parameters from a persistent floating palette."
+  },
+  "version": "1.5.2",
+  "runOnStartup": true,
+  "supportedOS": "windows|mac"
+}
