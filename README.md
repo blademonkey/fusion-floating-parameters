@@ -13,6 +13,7 @@ a persistent, resizable palette while you model.
   sketch dimension or feature.
 - Float the palette or dock it in the Fusion interface.
 - See calculated values, units, and parameter comments.
+- View Fusion text parameters safely as read-only values.
 - Drag the column dividers to resize the parameter, expression, and value columns.
 - Filter by name, expression, or comment.
 - Make several edits and apply them as a batch.
@@ -72,7 +73,15 @@ The palette opens when the add-in starts. If you close it, use the
 
 ## Version
 
-1.5.2
+1.5.3
+
+### 1.5.3
+
+- Adds compatibility with Fusion text user parameters.
+- Displays text parameters as read-only values without requesting numeric data.
+- Isolates parameter-loading failures so one unsupported parameter cannot prevent
+  the palette from opening.
+- Preserves numeric editing, QuickSave, rename, search, and Bloodhound behavior.
 
 ### 1.5.2
 

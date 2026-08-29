@@ -108,7 +108,7 @@ function startRename(parameter) {
 function currentExpression(parameter) {
   return state.edits.has(parameter.name)
     ? state.edits.get(parameter.name)
-    : parameter.expression;
+    : (parameter.expression || '');
 }
 
 function render() {
@@ -121,8 +121,10 @@ function render() {
     : null;
   const query = searchInput.value.trim().toLowerCase();
   const filtered = state.parameters.filter(parameter =>
-    parameter.name.toLowerCase().includes(query) ||
-    parameter.expression.toLowerCase().includes(query) ||
+    (parameter.name || '').toLowerCase().includes(query) ||
+    (parameter.expression || '').toLowerCase().includes(query) ||
+    (parameter.displayValue || '').toLowerCase().includes(query) ||
+    (parameter.textValue || '').toLowerCase().includes(query) ||
     (parameter.comment || '').toLowerCase().includes(query)
   );
 
@@ -188,52 +190,74 @@ function render() {
     }
 
     const expressionCell = document.createElement('td');
-    const editor = document.createElement('div');
-    editor.className = 'expression-editor';
-    const input = document.createElement('input');
-    input.className = 'expression';
-    input.value = currentExpression(parameter);
-    input.disabled = state.quickSaving === parameter.name;
-    input.setAttribute('aria-label', `${parameter.name} expression`);
-    const revertButton = document.createElement('button');
-    revertButton.type = 'button';
-    revertButton.className = 'revert-button';
-    revertButton.textContent = '↶';
-    revertButton.title = `Revert ${parameter.name}`;
-    revertButton.setAttribute('aria-label', `Revert ${parameter.name}`);
+    const kind = parameter.kind || 'numeric';
+    const isEditable = parameter.editable !== false && kind === 'numeric';
+    if (isEditable) {
+      const editor = document.createElement('div');
+      editor.className = 'expression-editor';
+      const input = document.createElement('input');
+      input.className = 'expression';
+      input.value = currentExpression(parameter);
+      input.disabled = state.quickSaving === parameter.name;
+      input.setAttribute('aria-label', `${parameter.name} expression`);
+      const revertButton = document.createElement('button');
+      revertButton.type = 'button';
+      revertButton.className = 'revert-button';
+      revertButton.textContent = '↶';
+      revertButton.title = `Revert ${parameter.name}`;
+      revertButton.setAttribute('aria-label', `Revert ${parameter.name}`);
 
-    const syncRowEdit = () => {
-      const original = state.originals.get(parameter.name);
-      if (input.value === original) state.edits.delete(parameter.name);
-      else state.edits.set(parameter.name, input.value);
-      delete state.errors[parameter.name];
-      updateDirtyState();
-      const changed = state.edits.has(parameter.name);
-      row.classList.toggle('changed', changed);
-      revertButton.hidden = !changed;
-      row.classList.remove('error');
-      const existingError = row.querySelector('.row-error');
-      if (existingError) existingError.remove();
-    };
+      const syncRowEdit = () => {
+        const original = state.originals.get(parameter.name);
+        if (input.value === original) state.edits.delete(parameter.name);
+        else state.edits.set(parameter.name, input.value);
+        delete state.errors[parameter.name];
+        updateDirtyState();
+        const changed = state.edits.has(parameter.name);
+        row.classList.toggle('changed', changed);
+        revertButton.hidden = !changed;
+        row.classList.remove('error');
+        const existingError = row.querySelector('.row-error');
+        if (existingError) existingError.remove();
+      };
 
-    input.addEventListener('input', syncRowEdit);
-    input.addEventListener('keydown', event => {
-      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-        event.preventDefault();
-        applyChanges();
-      } else if (event.key === 'Enter' && state.quickSaveEnabled) {
-        event.preventDefault();
-        applyOne(parameter.name);
-      }
-    });
-    revertButton.addEventListener('click', () => {
-      input.value = state.originals.get(parameter.name);
-      syncRowEdit();
-      input.focus();
-    });
-    revertButton.hidden = !state.edits.has(parameter.name);
-    editor.append(input, revertButton);
-    expressionCell.appendChild(editor);
+      input.addEventListener('input', syncRowEdit);
+      input.addEventListener('keydown', event => {
+        if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+          event.preventDefault();
+          applyChanges();
+        } else if (event.key === 'Enter' && state.quickSaveEnabled) {
+          event.preventDefault();
+          applyOne(parameter.name);
+        }
+      });
+      revertButton.addEventListener('click', () => {
+        input.value = state.originals.get(parameter.name);
+        syncRowEdit();
+        input.focus();
+      });
+      revertButton.hidden = !state.edits.has(parameter.name);
+      editor.append(input, revertButton);
+      expressionCell.appendChild(editor);
+    } else {
+      const readOnly = document.createElement('div');
+      readOnly.className = 'expression-readonly';
+      readOnly.title = parameter.displayValue || '';
+      readOnly.setAttribute(
+        'aria-label',
+        `${parameter.name} ${kind} value: ${parameter.displayValue || 'empty'}`
+      );
+
+      const readOnlyValue = document.createElement('span');
+      readOnlyValue.className = 'expression-readonly-value';
+      readOnlyValue.textContent = parameter.displayValue || '';
+
+      const kindBadge = document.createElement('span');
+      kindBadge.className = 'kind-badge';
+      kindBadge.textContent = kind === 'text' ? 'Text' : 'Unsupported';
+      readOnly.append(readOnlyValue, kindBadge);
+      expressionCell.appendChild(readOnly);
+    }
     if (state.errors[parameter.name]) {
       const error = document.createElement('div');
       error.className = 'row-error';
@@ -243,7 +267,7 @@ function render() {
 
     const valueCell = document.createElement('td');
     valueCell.className = 'value';
-    valueCell.textContent = parameter.valueText || String(parameter.value);
+    valueCell.textContent = parameter.valueText ?? parameter.displayValue ?? '';
     valueCell.title = valueCell.textContent;
 
     row.append(nameCell, expressionCell, valueCell);

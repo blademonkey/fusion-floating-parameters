@@ -25,6 +25,90 @@ def _design():
     return adsk.fusion.Design.cast(APP.activeProduct)
 
 
+def _safe_parameter_attr(parameter, name, default=''):
+    try:
+        value = getattr(parameter, name)
+        return default if value is None else value
+    except Exception:
+        return default
+
+
+def _parameter_kind(parameter):
+    """Return a stable palette kind without assuming every parameter is numeric."""
+    try:
+        value_type = parameter.valueType
+        value_types = getattr(adsk.fusion, 'ParameterValueTypes', None)
+        numeric_type = getattr(value_types, 'NumericParameterValueType', None)
+        text_type = getattr(value_types, 'TextParameterValueType', None)
+        if numeric_type is not None and value_type == numeric_type:
+            return 'numeric'
+        if text_type is not None and value_type == text_type:
+            return 'text'
+    except Exception:
+        # valueType and textValue were added in September 2025. Fall back to
+        # guarded property probes for resilience across Fusion builds.
+        pass
+
+    try:
+        parameter.value
+        return 'numeric'
+    except Exception:
+        pass
+
+    try:
+        parameter.textValue
+        return 'text'
+    except Exception:
+        return 'unsupported'
+
+
+def _read_parameter(parameter, units_manager):
+    kind = _parameter_kind(parameter)
+    name = str(_safe_parameter_attr(parameter, 'name', 'Unknown parameter'))
+    expression = str(_safe_parameter_attr(parameter, 'expression', ''))
+    unit = str(_safe_parameter_attr(parameter, 'unit', ''))
+    comment = str(_safe_parameter_attr(parameter, 'comment', ''))
+
+    payload = {
+        'name': name,
+        'kind': kind,
+        'expression': expression,
+        'value': None,
+        'valueText': '',
+        'displayValue': '',
+        'textValue': '',
+        'unit': unit,
+        'comment': comment,
+        'editable': kind == 'numeric'
+    }
+
+    if kind == 'numeric':
+        value = parameter.value
+        try:
+            value_text = units_manager.formatInternalValue(value, unit, True)
+        except Exception:
+            value_text = str(value)
+        payload.update({
+            'value': value,
+            'valueText': value_text,
+            'displayValue': expression or value_text
+        })
+    elif kind == 'text':
+        text_value = str(_safe_parameter_attr(parameter, 'textValue', ''))
+        payload.update({
+            'valueText': text_value,
+            'displayValue': text_value,
+            'textValue': text_value
+        })
+    else:
+        payload.update({
+            'valueText': 'Unsupported',
+            'displayValue': 'Unsupported'
+        })
+
+    return payload
+
+
 def _parameter_payload(source='system'):
     design = _design()
     if not design:
@@ -41,23 +125,29 @@ def _parameter_payload(source='system'):
     user_parameters = design.userParameters
     units_manager = design.unitsManager
     for index in range(user_parameters.count):
-        parameter = user_parameters.item(index)
         try:
-            value_text = units_manager.formatInternalValue(
-                parameter.value,
-                parameter.unit,
-                True
-            )
-        except Exception:
-            value_text = str(parameter.value)
-        parameters.append({
-            'name': parameter.name,
-            'expression': parameter.expression,
-            'value': parameter.value,
-            'valueText': value_text,
-            'unit': parameter.unit,
-            'comment': parameter.comment or ''
-        })
+            parameter = user_parameters.item(index)
+        except Exception as exc:
+            APP.log('Could not access user parameter {}: {}'.format(index, exc))
+            continue
+
+        try:
+            parameters.append(_read_parameter(parameter, units_manager))
+        except Exception as exc:
+            name = str(_safe_parameter_attr(parameter, 'name', f'Parameter {index + 1}'))
+            APP.log('Could not read user parameter "{}": {}'.format(name, exc))
+            parameters.append({
+                'name': name,
+                'kind': 'unsupported',
+                'expression': '',
+                'value': None,
+                'valueText': 'Unsupported',
+                'displayValue': 'Unsupported',
+                'textValue': '',
+                'unit': '',
+                'comment': '',
+                'editable': False
+            })
 
     document_name = APP.activeDocument.name if APP.activeDocument else 'Untitled'
     return {
@@ -233,6 +323,9 @@ def _apply_updates(updates):
         parameter = user_parameters.itemByName(name)
         if not parameter:
             errors[name] = 'The parameter no longer exists.'
+            continue
+        if _parameter_kind(parameter) != 'numeric':
+            errors[name] = 'This parameter type is read-only in Floating Parameters.'
             continue
         if not expression:
             errors[name] = 'Expression cannot be empty.'

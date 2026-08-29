@@ -6,6 +6,33 @@ parameters from a persistent, resizable palette.
 These notes are arranged newest first. Each version section can be copied into
 the description for its corresponding GitHub Release.
 
+## v1.5.3 — Text parameter compatibility
+
+This patch allows Floating Parameters to coexist with add-ins and designs that
+create text user parameters, including version-number parameters.
+
+### Added
+
+- Text user parameters now appear in the palette as read-only values.
+- Text values can be found using the existing parameter search.
+- Read-only rows include a small type indicator.
+
+### Fixed
+
+- Opening a design containing a text parameter no longer causes Floating
+  Parameters to request a numeric value and fail during startup.
+- Each user parameter is read independently, so an unsupported or inaccessible
+  parameter cannot prevent the remaining parameters from loading.
+- Unsupported parameter types are displayed safely instead of being treated as
+  numeric parameters.
+
+### Behavior
+
+- Numeric expression editing, batch Apply, QuickSave, rename, and Bloodhound
+  continue to work as before.
+- Text parameters are intentionally read-only in this release. Writable text
+  support will require separate live Fusion round-trip testing.
+
 ## v1.5.2 — Blademonkey publishing identity
 
 This release prepares Floating Parameters for publication under the

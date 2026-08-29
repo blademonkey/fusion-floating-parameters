@@ -243,6 +243,34 @@ td { padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: t
   background: var(--surface);
   color: var(--text);
 }
+.expression-readonly {
+  display: flex;
+  min-width: 0;
+  min-height: 24px;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--muted);
+}
+.expression-readonly-value {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kind-badge {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 16px;
+}
 .revert-button {
   flex: 0 0 auto;
   width: 23px;
