@@ -1,3 +1,6 @@
+<img width="312" height="608" alt="image" src="https://github.com/user-attachments/assets/a495a1dc-07b6-4ade-82fa-af19e8dd5470" />
+
+
 # Floating Parameters for Autodesk Fusion
 
 Floating Parameters is a Fusion add-in that keeps user parameters available in
