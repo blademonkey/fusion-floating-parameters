@@ -6,6 +6,13 @@
 Floating Parameters is a Fusion add-in that keeps user parameters available in
 a persistent, resizable palette while you model.
 
+## Media
+
+- [Watch the Floating Parameters product demonstration on YouTube](https://youtu.be/nXjoLgPKAi0).
+
+The video is a stylized concept demonstration using a made-up parametric
+equipment mount.
+
 ## Features
 
 - Edit user-parameter expressions without reopening **Change Parameters**.
