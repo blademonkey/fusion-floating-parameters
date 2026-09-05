@@ -6,7 +6,7 @@
   "description": {
     "": "Edit Fusion user parameters from a persistent floating palette."
   },
-  "version": "1.5.3",
+  "version": "1.5.4",
   "runOnStartup": true,
   "supportedOS": "windows|mac"
 }

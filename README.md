@@ -1,6 +1,5 @@
 <img width="312" height="608" alt="image" src="https://github.com/user-attachments/assets/a495a1dc-07b6-4ade-82fa-af19e8dd5470" />
 
-
 # Floating Parameters for Autodesk Fusion
 
 Floating Parameters is a Fusion add-in that keeps user parameters available in
@@ -28,6 +27,7 @@ equipment mount.
 - Filter by name, expression, or comment.
 - Make several edits and apply them as a batch.
 - Enable **QuickSave** to apply only the active parameter by pressing **Enter**.
+- Use the toolbar icon to show or hide the palette without stopping the add-in.
 - See errors beside any expression Fusion rejects.
 - Press **Ctrl+Enter** (Windows) or **Command+Enter** (macOS) while editing to apply.
 
@@ -61,8 +61,10 @@ Required Notice: Copyright 2026 blademonkey
 3. In Fusion, open **Utilities > Add-Ins > Scripts and Add-Ins**.
 4. Select **FloatingParameters** and click **Run**.
 
-The palette opens when the add-in starts. If you close it, use the
-**Floating Parameters** button in the **Utilities > Add-Ins** toolbar panel.
+The palette opens after Fusion finishes activating its initial workspace. Use
+the **Floating Parameters** toolbar icon to show or hide it without stopping the
+add-in. Closing or hiding the palette keeps it hidden for the remainder of the
+current Fusion session; it opens again the next time the add-in starts.
 
 ## Usage
 
@@ -83,7 +85,19 @@ The palette opens when the add-in starts. If you close it, use the
 
 ## Version
 
-1.5.3
+1.5.4
+
+### 1.5.4
+
+- Defers palette and toolbar creation until Fusion's interface is ready during
+  automatic startup.
+- Retries any missing command, toolbar, or palette component on later workspace
+  and document activation events.
+- Adds a custom toolbar icon that toggles the palette between shown and hidden.
+- Keeps the add-in loaded when the palette is hidden and disables Bloodhound
+  while hidden.
+- Separates palette creation from visibility so startup retries cannot reopen a
+  palette the user deliberately closed during the current session.
 
 ### 1.5.3
 

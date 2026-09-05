@@ -13,12 +13,24 @@ ADDIN_DIR = os.path.dirname(os.path.realpath(__file__))
 PALETTE_ID = 'blademonkeyFloatingParametersPalette'
 COMMAND_ID = 'blademonkeyFloatingParametersCommand'
 COMMAND_NAME = 'Floating Parameters'
-COMMAND_DESCRIPTION = 'Show an editable floating palette of user parameters.'
+COMMAND_DESCRIPTION = 'Show or hide the Floating Parameters palette.'
+COMMAND_RESOURCE_DIR = os.path.join(ADDIN_DIR, 'resources', 'command')
 
 handlers = []
 document_activated_handler = None
 active_selection_handler = None
+workspace_activated_handler = None
+command_created_handler = None
 bloodhound_enabled = False
+ui_initialization_pending = False
+initial_palette_open_pending = False
+
+
+def _log(message):
+    try:
+        APP.log('Floating Parameters: {}'.format(message))
+    except Exception:
+        pass
 
 
 def _design():
@@ -542,8 +554,9 @@ class PaletteHTMLHandler(adsk.core.HTMLEventHandler):
 
 class PaletteClosedHandler(adsk.core.UserInterfaceGeneralEventHandler):
     def notify(self, args):
-        global bloodhound_enabled
-        bloodhound_enabled = False
+        global initial_palette_open_pending
+        initial_palette_open_pending = False
+        _on_palette_hidden()
 
 
 class ActiveSelectionChangedHandler(adsk.core.ActiveSelectionEventHandler):
@@ -559,35 +572,51 @@ class ActiveSelectionChangedHandler(adsk.core.ActiveSelectionEventHandler):
 class DocumentActivatedHandler(adsk.core.DocumentEventHandler):
     def notify(self, args):
         try:
+            if ui_initialization_pending:
+                _ensure_ui_initialized('documentActivated')
             palette = UI.palettes.itemById(PALETTE_ID)
             if palette and palette.isVisible:
                 _send('highlight', _empty_highlight())
                 _refresh('document')
                 _update_bloodhound()
-        except Exception:
-            pass
+        except Exception as exc:
+            _log('Document activation handling failed: {}'.format(exc))
 
 
-def _show_palette():
-    global bloodhound_enabled
-    bloodhound_enabled = False
+class WorkspaceActivatedHandler(adsk.core.WorkspaceEventHandler):
+    def notify(self, args):
+        if not ui_initialization_pending:
+            return
+        try:
+            _ensure_ui_initialized('workspaceActivated')
+        except Exception as exc:
+            _log('Workspace activation handling failed: {}'.format(exc))
+
+
+def _ensure_palette_created():
     palette = UI.palettes.itemById(PALETTE_ID)
-    if not palette:
-        # Palette.add expects a URL. Passing a native Windows path causes Fusion's
-        # embedded browser to encode backslashes as %5C and reject the result.
-        html_url = Path(
-            os.path.join(ADDIN_DIR, 'resources', 'index.html')
-        ).resolve().as_uri()
+    if palette:
+        return True
+
+    # Palette.add expects a URL. Passing a native Windows path causes Fusion's
+    # embedded browser to encode backslashes as %5C and reject the result.
+    html_url = Path(
+        os.path.join(ADDIN_DIR, 'resources', 'index.html')
+    ).resolve().as_uri()
+    try:
         palette = UI.palettes.add(
             PALETTE_ID,
             'Floating Parameters',
             html_url,
-            True,
+            False,
             True,
             True,
             460,
             640
         )
+        if not palette:
+            _log('Palette creation returned no palette for {}'.format(html_url))
+            return False
 
         html_handler = PaletteHTMLHandler()
         palette.incomingFromHTML.add(html_handler)
@@ -596,20 +625,164 @@ def _show_palette():
         closed_handler = PaletteClosedHandler()
         palette.closed.add(closed_handler)
         handlers.append(closed_handler)
-    else:
-        palette.isVisible = True
+        return True
+    except Exception:
+        _log('Palette creation failed for {}:\n{}'.format(html_url, traceback.format_exc()))
+        try:
+            if palette:
+                palette.deleteMe()
+        except Exception:
+            pass
+        return False
 
-    _send('bloodhoundState', {'enabled': False})
-    _send('highlight', _empty_highlight())
-    _refresh()
+
+def _on_palette_hidden():
+    global bloodhound_enabled
+    bloodhound_enabled = False
+    try:
+        _send('bloodhoundState', {'enabled': False})
+        _send('highlight', _empty_highlight())
+    except Exception as exc:
+        _log('Could not synchronize the hidden palette state: {}'.format(exc))
+
+
+def _set_palette_visible(visible):
+    palette = UI.palettes.itemById(PALETTE_ID)
+    if not palette:
+        _log('Cannot set palette visibility because the palette does not exist.')
+        return False
+
+    try:
+        if not visible:
+            _on_palette_hidden()
+        palette.isVisible = bool(visible)
+        if bool(palette.isVisible) != bool(visible):
+            _log('Fusion did not retain palette visibility={}.'.format(bool(visible)))
+            return False
+        return True
+    except Exception:
+        _log('Could not set palette visibility={}:\n{}'.format(
+            bool(visible), traceback.format_exc()
+        ))
+        return False
+
+
+def _ensure_command_definition_and_handler():
+    global command_created_handler
+    try:
+        command_definition = UI.commandDefinitions.itemById(COMMAND_ID)
+        if not command_definition:
+            command_definition = UI.commandDefinitions.addButtonDefinition(
+                COMMAND_ID,
+                COMMAND_NAME,
+                COMMAND_DESCRIPTION,
+                COMMAND_RESOURCE_DIR
+            )
+        else:
+            command_definition.resourceFolder = COMMAND_RESOURCE_DIR
+
+        if not command_definition:
+            _log('Command definition creation returned no command.')
+            return None
+
+        if not command_created_handler:
+            command_created_handler = CommandCreatedHandler()
+            command_definition.commandCreated.add(command_created_handler)
+            handlers.append(command_created_handler)
+        return command_definition
+    except Exception:
+        _log('Command definition initialization failed:\n{}'.format(
+            traceback.format_exc()
+        ))
+        return None
+
+
+def _ensure_toolbar_control(command_definition):
+    try:
+        panel = UI.allToolbarPanels.itemById('SolidScriptsAddinsPanel')
+        if not panel:
+            active_workspace = getattr(UI, 'activeWorkspace', None)
+            workspace_id = getattr(active_workspace, 'id', 'unavailable')
+            _log('Toolbar panel is not ready; active workspace={}.'.format(workspace_id))
+            return False
+
+        control = panel.controls.itemById(COMMAND_ID)
+        if not control:
+            control = panel.controls.addCommand(command_definition)
+        if not control:
+            _log('Toolbar control creation returned no control.')
+            return False
+
+        control.isPromoted = True
+        control.isPromotedByDefault = True
+        return True
+    except Exception:
+        _log('Toolbar control initialization failed:\n{}'.format(
+            traceback.format_exc()
+        ))
+        return False
+
+
+def _ensure_ui_initialized(trigger='unknown'):
+    global initial_palette_open_pending, ui_initialization_pending
+
+    command_definition = _ensure_command_definition_and_handler()
+    command_ready = command_definition is not None
+    toolbar_ready = (
+        _ensure_toolbar_control(command_definition) if command_ready else False
+    )
+    palette_ready = _ensure_palette_created()
+
+    if initial_palette_open_pending and palette_ready:
+        if _set_palette_visible(True):
+            initial_palette_open_pending = False
+
+    ui_initialization_pending = not (
+        command_ready and toolbar_ready and palette_ready
+    )
+    if ui_initialization_pending:
+        _log(
+            'UI initialization remains pending after {} '
+            '(command={}, toolbar={}, palette={}).'.format(
+                trigger, command_ready, toolbar_ready, palette_ready
+            )
+        )
+    else:
+        _log('UI initialization completed after {}.'.format(trigger))
+    return not ui_initialization_pending
+
+
+def _show_palette():
+    global initial_palette_open_pending
+    if not _ensure_palette_created():
+        return False
+    shown = _set_palette_visible(True)
+    if shown:
+        initial_palette_open_pending = False
+    return shown
+
+
+def _toggle_palette():
+    global initial_palette_open_pending
+    palette = UI.palettes.itemById(PALETTE_ID)
+    if palette and palette.isVisible:
+        hidden = _set_palette_visible(False)
+        if hidden:
+            initial_palette_open_pending = False
+        return hidden
+    return _show_palette()
 
 
 class CommandExecuteHandler(adsk.core.CommandEventHandler):
     def notify(self, args):
         try:
-            _show_palette()
+            if not _toggle_palette():
+                raise RuntimeError('Fusion could not change the palette visibility.')
         except Exception:
-            UI.messageBox('Unable to show Floating Parameters:\n\n' + traceback.format_exc())
+            UI.messageBox(
+                'Unable to show or hide Floating Parameters:\n\n' +
+                traceback.format_exc()
+            )
 
 
 class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
@@ -619,32 +792,20 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
         handlers.append(execute_handler)
 
 
-def _add_command():
-    command_definition = UI.commandDefinitions.itemById(COMMAND_ID)
-    if not command_definition:
-        command_definition = UI.commandDefinitions.addButtonDefinition(
-            COMMAND_ID,
-            COMMAND_NAME,
-            COMMAND_DESCRIPTION,
-            ''
-        )
-
-    created_handler = CommandCreatedHandler()
-    command_definition.commandCreated.add(created_handler)
-    handlers.append(created_handler)
-
-    panel = UI.allToolbarPanels.itemById('SolidScriptsAddinsPanel')
-    if panel and not panel.controls.itemById(COMMAND_ID):
-        control = panel.controls.addCommand(command_definition)
-        control.isPromoted = True
-        control.isPromotedByDefault = True
-
-
 def run(context):
     global active_selection_handler, bloodhound_enabled, document_activated_handler
+    global initial_palette_open_pending, ui_initialization_pending
+    global workspace_activated_handler
     try:
+        is_application_startup = bool(
+            context.get('IsApplicationStartup', False)
+        ) if isinstance(context, dict) else False
+        _log('run called; IsApplicationStartup={}.'.format(is_application_startup))
+
         bloodhound_enabled = False
-        _add_command()
+        ui_initialization_pending = True
+        initial_palette_open_pending = True
+
         if not document_activated_handler:
             document_activated_handler = DocumentActivatedHandler()
             APP.documentActivated.add(document_activated_handler)
@@ -653,15 +814,28 @@ def run(context):
             active_selection_handler = ActiveSelectionChangedHandler()
             UI.activeSelectionChanged.add(active_selection_handler)
             handlers.append(active_selection_handler)
-        _show_palette()
+
+        if not workspace_activated_handler:
+            workspace_activated_handler = WorkspaceActivatedHandler()
+            UI.workspaceActivated.add(workspace_activated_handler)
+            handlers.append(workspace_activated_handler)
+
+        if not is_application_startup:
+            _ensure_ui_initialized('manual run')
+        else:
+            _log('Deferring UI initialization until Fusion activates a workspace or document.')
     except Exception:
         UI.messageBox('Floating Parameters failed to start:\n\n' + traceback.format_exc())
 
 
 def stop(context):
-    global active_selection_handler, bloodhound_enabled, document_activated_handler
+    global active_selection_handler, bloodhound_enabled, command_created_handler
+    global document_activated_handler, initial_palette_open_pending
+    global ui_initialization_pending, workspace_activated_handler
     try:
         bloodhound_enabled = False
+        ui_initialization_pending = False
+        initial_palette_open_pending = False
         if active_selection_handler:
             UI.activeSelectionChanged.remove(active_selection_handler)
             active_selection_handler = None
@@ -669,6 +843,10 @@ def stop(context):
         if document_activated_handler:
             APP.documentActivated.remove(document_activated_handler)
             document_activated_handler = None
+
+        if workspace_activated_handler:
+            UI.workspaceActivated.remove(workspace_activated_handler)
+            workspace_activated_handler = None
 
         palette = UI.palettes.itemById(PALETTE_ID)
         if palette:
@@ -686,4 +864,5 @@ def stop(context):
     except Exception:
         UI.messageBox('Floating Parameters failed to stop cleanly:\n\n' + traceback.format_exc())
     finally:
+        command_created_handler = None
         handlers.clear()

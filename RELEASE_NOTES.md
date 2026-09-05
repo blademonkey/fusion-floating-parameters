@@ -6,6 +6,38 @@ parameters from a persistent, resizable palette.
 These notes are arranged newest first. Each version section can be copied into
 the description for its corresponding GitHub Release.
 
+## v1.5.4: Reliable startup and palette toggle
+
+This patch waits for Fusion's interface to become ready before creating the
+Floating Parameters toolbar control and palette during automatic startup.
+
+### Added
+
+- Added a custom Floating Parameters toolbar icon.
+- The toolbar icon now toggles the existing palette between shown and hidden.
+- Added startup diagnostics for command, toolbar, and palette readiness.
+
+### Fixed
+
+- The palette no longer relies on Fusion's workspace being ready during the
+  initial add-in `run()` call.
+- Missing toolbar or palette components are retried on later workspace and
+  document activation events.
+- Startup retries no longer reopen a palette after the user closes or hides it.
+- Command, toolbar, palette, and handler creation are idempotent, preventing
+  duplicate UI controls during a retry.
+
+### Behavior
+
+- **Run on Startup** continues to control whether Fusion loads the add-in.
+- The toolbar icon controls only the palette's current visibility; it does not
+  unload or disable the add-in.
+- Closing or hiding the palette keeps it hidden for the current Fusion session.
+  The palette opens again the next time the add-in starts.
+- Bloodhound is disabled whenever the palette is hidden.
+- Hiding uses Fusion's existing palette object rather than deleting and
+  recreating it.
+
 ## v1.5.3 — Text parameter compatibility
 
 This patch allows Floating Parameters to coexist with add-ins and designs that
