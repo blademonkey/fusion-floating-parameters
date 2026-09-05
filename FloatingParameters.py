@@ -15,6 +15,8 @@ COMMAND_ID = 'blademonkeyFloatingParametersCommand'
 COMMAND_NAME = 'Floating Parameters'
 COMMAND_DESCRIPTION = 'Show or hide the Floating Parameters palette.'
 COMMAND_RESOURCE_DIR = os.path.join(ADDIN_DIR, 'resources', 'command')
+UTILITIES_TOOLBAR_PANEL_ID = 'SolidScriptsAddinsPanel'
+SOLID_TOOLBAR_PANEL_ID = 'SolidModifyPanel'
 
 handlers = []
 document_activated_handler = None
@@ -24,6 +26,7 @@ command_created_handler = None
 bloodhound_enabled = False
 ui_initialization_pending = False
 initial_palette_open_pending = False
+solid_toolbar_pending = False
 
 
 def _log(message):
@@ -574,6 +577,8 @@ class DocumentActivatedHandler(adsk.core.DocumentEventHandler):
         try:
             if ui_initialization_pending:
                 _ensure_ui_initialized('documentActivated')
+            elif solid_toolbar_pending:
+                _retry_solid_toolbar_control('documentActivated')
             palette = UI.palettes.itemById(PALETTE_ID)
             if palette and palette.isVisible:
                 _send('highlight', _empty_highlight())
@@ -585,10 +590,13 @@ class DocumentActivatedHandler(adsk.core.DocumentEventHandler):
 
 class WorkspaceActivatedHandler(adsk.core.WorkspaceEventHandler):
     def notify(self, args):
-        if not ui_initialization_pending:
+        if not ui_initialization_pending and not solid_toolbar_pending:
             return
         try:
-            _ensure_ui_initialized('workspaceActivated')
+            if ui_initialization_pending:
+                _ensure_ui_initialized('workspaceActivated')
+            else:
+                _retry_solid_toolbar_control('workspaceActivated')
         except Exception as exc:
             _log('Workspace activation handling failed: {}'.format(exc))
 
@@ -697,13 +705,15 @@ def _ensure_command_definition_and_handler():
         return None
 
 
-def _ensure_toolbar_control(command_definition):
+def _ensure_toolbar_control(command_definition, panel_id):
     try:
-        panel = UI.allToolbarPanels.itemById('SolidScriptsAddinsPanel')
+        panel = UI.allToolbarPanels.itemById(panel_id)
         if not panel:
             active_workspace = getattr(UI, 'activeWorkspace', None)
             workspace_id = getattr(active_workspace, 'id', 'unavailable')
-            _log('Toolbar panel is not ready; active workspace={}.'.format(workspace_id))
+            _log('Toolbar panel {} is not ready; active workspace={}.'.format(
+                panel_id, workspace_id
+            ))
             return False
 
         control = panel.controls.itemById(COMMAND_ID)
@@ -717,19 +727,42 @@ def _ensure_toolbar_control(command_definition):
         control.isPromotedByDefault = True
         return True
     except Exception:
-        _log('Toolbar control initialization failed:\n{}'.format(
-            traceback.format_exc()
+        _log('Toolbar control initialization failed for {}:\n{}'.format(
+            panel_id, traceback.format_exc()
         ))
         return False
 
 
+def _retry_solid_toolbar_control(trigger='unknown'):
+    global solid_toolbar_pending
+    command_definition = _ensure_command_definition_and_handler()
+    if not command_definition:
+        solid_toolbar_pending = True
+        return False
+
+    solid_toolbar_pending = not _ensure_toolbar_control(
+        command_definition, SOLID_TOOLBAR_PANEL_ID
+    )
+    if solid_toolbar_pending:
+        _log('Optional Solid toolbar control remains pending after {}.'.format(trigger))
+    else:
+        _log('Optional Solid toolbar control is ready after {}.'.format(trigger))
+    return not solid_toolbar_pending
+
+
 def _ensure_ui_initialized(trigger='unknown'):
-    global initial_palette_open_pending, ui_initialization_pending
+    global initial_palette_open_pending, solid_toolbar_pending
+    global ui_initialization_pending
 
     command_definition = _ensure_command_definition_and_handler()
     command_ready = command_definition is not None
     toolbar_ready = (
-        _ensure_toolbar_control(command_definition) if command_ready else False
+        _ensure_toolbar_control(command_definition, UTILITIES_TOOLBAR_PANEL_ID)
+        if command_ready else False
+    )
+    solid_toolbar_pending = not (
+        _ensure_toolbar_control(command_definition, SOLID_TOOLBAR_PANEL_ID)
+        if command_ready else False
     )
     palette_ready = _ensure_palette_created()
 
@@ -794,7 +827,8 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
 
 def run(context):
     global active_selection_handler, bloodhound_enabled, document_activated_handler
-    global initial_palette_open_pending, ui_initialization_pending
+    global initial_palette_open_pending, solid_toolbar_pending
+    global ui_initialization_pending
     global workspace_activated_handler
     try:
         is_application_startup = bool(
@@ -805,6 +839,7 @@ def run(context):
         bloodhound_enabled = False
         ui_initialization_pending = True
         initial_palette_open_pending = True
+        solid_toolbar_pending = True
 
         if not document_activated_handler:
             document_activated_handler = DocumentActivatedHandler()
@@ -831,11 +866,13 @@ def run(context):
 def stop(context):
     global active_selection_handler, bloodhound_enabled, command_created_handler
     global document_activated_handler, initial_palette_open_pending
-    global ui_initialization_pending, workspace_activated_handler
+    global solid_toolbar_pending, ui_initialization_pending
+    global workspace_activated_handler
     try:
         bloodhound_enabled = False
         ui_initialization_pending = False
         initial_palette_open_pending = False
+        solid_toolbar_pending = False
         if active_selection_handler:
             UI.activeSelectionChanged.remove(active_selection_handler)
             active_selection_handler = None
@@ -852,11 +889,12 @@ def stop(context):
         if palette:
             palette.deleteMe()
 
-        panel = UI.allToolbarPanels.itemById('SolidScriptsAddinsPanel')
-        if panel:
-            control = panel.controls.itemById(COMMAND_ID)
-            if control:
-                control.deleteMe()
+        for panel_id in (UTILITIES_TOOLBAR_PANEL_ID, SOLID_TOOLBAR_PANEL_ID):
+            panel = UI.allToolbarPanels.itemById(panel_id)
+            if panel:
+                control = panel.controls.itemById(COMMAND_ID)
+                if control:
+                    control.deleteMe()
 
         command_definition = UI.commandDefinitions.itemById(COMMAND_ID)
         if command_definition:

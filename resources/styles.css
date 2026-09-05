@@ -6,6 +6,7 @@
   --muted: #68717d;
   --border: #d7dbe0;
   --accent: #087ea4;
+  --accent-rgb: 8, 126, 164;
   --accent-hover: #066b8c;
   --changed: #fff7d6;
   --error: #b42318;
@@ -19,6 +20,7 @@
     --muted: #aeb5be;
     --border: #4a5058;
     --accent: #35a9cf;
+    --accent-rgb: 53, 169, 207;
     --accent-hover: #58b9d8;
     --changed: #51491f;
     --error: #ff8a80;
@@ -285,7 +287,11 @@ td { padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: t
 .revert-button:hover { border-color: var(--accent); color: var(--accent); }
 tr.changed td { background: var(--changed); }
 tr.error .expression { border-color: var(--error); }
-tr.bloodhound-direct td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+tr.bloodhound-direct td:first-child {
+  box-shadow:
+    inset 0 0 0 9999px rgba(var(--accent-rgb), .16),
+    inset 2px 0 0 var(--accent);
+}
 .row-error { color: var(--error); font-size: 11px; margin-top: 3px; }
 .value {
   overflow: hidden;

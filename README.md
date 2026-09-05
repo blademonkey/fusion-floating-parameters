@@ -18,16 +18,18 @@ equipment mount.
 - Create user parameters with a name, expression, units, and optional comment.
 - Rename a user parameter by double-clicking its name, or focusing it and pressing
   **Enter** or **F2**.
-- Enable **Bloodhound** to highlight parameters directly used by a selected
-  sketch dimension or feature.
+- Enable **Bloodhound** to highlight the complete name cell of parameters
+  directly used by a selected sketch dimension or feature.
 - Float the palette or dock it in the Fusion interface.
 - See calculated values, units, and parameter comments.
 - View Fusion text parameters safely as read-only values.
 - Drag the column dividers to resize the parameter, expression, and value columns.
 - Filter by name, expression, or comment.
 - Make several edits and apply them as a batch.
-- Enable **QuickSave** to apply only the active parameter by pressing **Enter**.
-- Use the toolbar icon to show or hide the palette without stopping the add-in.
+- Use **QuickSave**, enabled by default, to apply only the active parameter by
+  pressing **Enter**. Your QuickSave preference is remembered.
+- Use the toolbar icon in Utilities or Solid to show or hide the palette without
+  stopping the add-in.
 - See errors beside any expression Fusion rejects.
 - Press **Ctrl+Enter** (Windows) or **Command+Enter** (macOS) while editing to apply.
 
@@ -85,7 +87,16 @@ current Fusion session; it opens again the next time the add-in starts.
 
 ## Version
 
-1.5.4
+1.5.5
+
+### 1.5.5
+
+- Enables QuickSave by default and remembers the user's selection.
+- Highlights the complete parameter-name cell for Bloodhound matches.
+- Adds a second palette toggle to the Solid Modify toolbar while retaining the
+  Utilities control.
+- Keeps the Solid toolbar control optional so its absence cannot delay palette
+  startup.
 
 ### 1.5.4
 

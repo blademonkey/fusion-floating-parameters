@@ -6,6 +6,35 @@ parameters from a persistent, resizable palette.
 These notes are arranged newest first. Each version section can be copied into
 the description for its corresponding GitHub Release.
 
+## v1.5.5: Faster access and clearer highlighting
+
+This update makes the most common parameter workflow faster, improves
+Bloodhound visibility, and makes the palette toggle available from both
+Utilities and Solid.
+
+### Added
+
+- Added a second Floating Parameters toolbar control to the Solid Modify panel.
+- Added a remembered QuickSave preference using the palette's existing local
+  browser storage.
+- Added an accessible Bloodhound match label to highlighted parameter names.
+
+### Changed
+
+- QuickSave is enabled by default when no saved preference exists.
+- Bloodhound now highlights the complete parameter-name cell instead of showing
+  only a narrow marker at the beginning of the row.
+- Bloodhound highlighting preserves pending-change backgrounds and remains the
+  same for numeric and text parameters.
+
+### Reliability
+
+- The Solid toolbar control is optional and never participates in the main
+  startup-readiness gate.
+- Missing Solid UI is retried on later workspace or document activation without
+  delaying the palette or reopening a palette the user deliberately hid.
+- Both toolbar controls are removed explicitly when the add-in stops.
+
 ## v1.5.4: Reliable startup and palette toggle
 
 This patch waits for Fusion's interface to become ready before creating the

@@ -6,7 +6,7 @@ const state = {
   defaultUnits: '',
   bloodhoundEnabled: false,
   bloodhoundDirect: new Set(),
-  quickSaveEnabled: false,
+  quickSaveEnabled: true,
   quickSaving: null,
   rename: null
 };
@@ -25,6 +25,30 @@ const createParameterButton = document.getElementById('createParameterButton');
 const bloodhoundToggle = document.getElementById('bloodhoundToggle');
 const quickSaveToggle = document.getElementById('quickSaveToggle');
 const COLUMN_WIDTHS_KEY = 'floatingParameters.columnWidths.v1';
+const QUICK_SAVE_KEY = 'floatingParameters.quickSaveEnabled.v1';
+
+function initializeQuickSave() {
+  let enabled = true;
+  try {
+    const saved = window.localStorage.getItem(QUICK_SAVE_KEY);
+    if (saved !== null) enabled = saved === 'true';
+  } catch (error) {
+    // Keep the safe default when embedded-browser storage is unavailable.
+  }
+  state.quickSaveEnabled = enabled;
+  quickSaveToggle.checked = enabled;
+}
+
+function storeQuickSavePreference() {
+  try {
+    window.localStorage.setItem(
+      QUICK_SAVE_KEY,
+      state.quickSaveEnabled ? 'true' : 'false'
+    );
+  } catch (error) {
+    // The in-memory choice remains active even if storage is unavailable.
+  }
+}
 
 function send(action, data = {}) {
   if (window.adsk && adsk.fusionSendData) {
@@ -131,12 +155,13 @@ function render() {
   rows.replaceChildren();
   filtered.forEach(parameter => {
     const row = document.createElement('tr');
+    const isBloodhoundMatch = state.bloodhoundDirect.has(parameter.name);
     row.dataset.name = parameter.name;
     row.classList.toggle('changed', state.edits.has(parameter.name));
     row.classList.toggle('error', Boolean(state.errors[parameter.name]));
     row.classList.toggle(
       'bloodhound-direct',
-      state.bloodhoundDirect.has(parameter.name)
+      isBloodhoundMatch
     );
 
     const nameCell = document.createElement('td');
@@ -173,6 +198,12 @@ function render() {
       name.tabIndex = 0;
       name.textContent = parameter.name;
       name.title = `${parameter.name} — double-click to rename`;
+      name.setAttribute(
+        'aria-label',
+        isBloodhoundMatch
+          ? `${parameter.name}, Bloodhound match`
+          : parameter.name
+      );
       name.addEventListener('dblclick', () => startRename(parameter));
       name.addEventListener('keydown', event => {
         if (event.key === 'Enter' || event.key === 'F2') {
@@ -569,6 +600,7 @@ bloodhoundToggle.addEventListener('change', () => {
 });
 quickSaveToggle.addEventListener('change', () => {
   state.quickSaveEnabled = quickSaveToggle.checked;
+  storeQuickSavePreference();
   setStatus(
     state.quickSaveEnabled
       ? 'QuickSave enabled — Enter saves the active parameter.'
@@ -596,5 +628,6 @@ createForm.addEventListener('submit', event => {
 });
 applyButton.addEventListener('click', applyChanges);
 searchInput.addEventListener('input', render);
+initializeQuickSave();
 initializeColumnResize();
 window.addEventListener('DOMContentLoaded', () => send('ready'));
