@@ -119,6 +119,8 @@ does not move the Browser or Comments panels automatically.
 - Highlights the complete parameter-name cell for Bloodhound matches.
 - Adds a second palette toggle to the Solid Modify toolbar while retaining the
   Utilities control.
+  <img width="2504" height="348" alt="image" src="https://github.com/user-attachments/assets/9d741c27-6806-43f4-95c7-3d2c4f43e80d" />
+
 - Keeps the Solid toolbar control optional so its absence cannot delay palette
   startup.
 
