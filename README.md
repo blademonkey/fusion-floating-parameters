@@ -30,6 +30,9 @@ equipment mount.
   pressing **Enter**. Your QuickSave preference is remembered.
 - Use the toolbar icon in Utilities or Solid to show or hide the palette without
   stopping the add-in.
+- Restore the last floating size and position after restarting Fusion.
+- Use **Reset Floating Parameters Layout** in Utilities to recover the palette
+  at a visible default floating position and size.
 - See errors beside any expression Fusion rejects.
 - Press **Ctrl+Enter** (Windows) or **Command+Enter** (macOS) while editing to apply.
 
@@ -68,6 +71,12 @@ the **Floating Parameters** toolbar icon to show or hide it without stopping the
 add-in. Closing or hiding the palette keeps it hidden for the remainder of the
 current Fusion session; it opens again the next time the add-in starts.
 
+Floating palettes reopen at their last saved position and size. If the palette
+was docked when Fusion closed, it reopens as a floating palette near the saved
+location and size. Fusion's public palette API cannot safely recreate an exact
+stack above Comments without rearranging native panels, so Floating Parameters
+does not move the Browser or Comments panels automatically.
+
 ## Usage
 
 1. Open a parametric Fusion design containing at least one user parameter.
@@ -84,10 +93,25 @@ current Fusion session; it opens again the next time the add-in starts.
   the API call that needs adjustment for your Fusion build.
 - If a parameter expression is invalid or creates a circular dependency, Fusion
   rejects it and the palette leaves that edit in place with an error message.
+- If the palette is off-screen or its layout is otherwise unusable, click
+  **Reset Floating Parameters Layout** in the Utilities toolbar. This returns it
+  to a visible floating position at its default size.
 
 ## Version
 
-1.5.5
+1.5.6
+
+### 1.5.6
+
+- Remembers a floating palette's position and size across Fusion sessions.
+- Reopens a previously docked palette as floating near its saved geometry to
+  avoid rearranging Fusion's Browser or Comments panels.
+- Adds a promoted **Reset Floating Parameters Layout** command to Utilities for
+  recovering an off-screen or unusable palette.
+- Validates saved layout data and writes it atomically so malformed or partial
+  state cannot block palette startup.
+- Keeps layout restoration best-effort and outside the add-in's startup
+  readiness gate.
 
 ### 1.5.5
 

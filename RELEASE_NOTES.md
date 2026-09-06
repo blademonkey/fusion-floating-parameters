@@ -6,6 +6,44 @@ parameters from a persistent, resizable palette.
 These notes are arranged newest first. Each version section can be copied into
 the description for its corresponding GitHub Release.
 
+## v1.5.6: Persistent and recoverable palette layout
+
+This update remembers the Floating Parameters palette across Fusion sessions
+without allowing a custom palette to rearrange Fusion's native panels.
+
+### Added
+
+- Added persistent storage for the palette's last readable position, size, and
+  floating or docked mode.
+- Added a promoted **Reset Floating Parameters Layout** command to the Utilities
+  toolbar. It returns the palette to a visible 460 by 640 floating layout at a
+  known position.
+
+### Changed
+
+- Floating palettes reopen at their saved position and size.
+- A palette that was docked when Fusion closed reopens as floating near its
+  saved geometry. This is intentional because Fusion could not reliably restore
+  the prior dock stack without moving the Browser and Comments panels.
+- The add-in never calls `snapTo` or changes native Browser or Comments palette
+  layout during automatic restoration.
+
+### Reliability
+
+- Layout data is validated before use and stored with an atomic replacement.
+- Invalid, corrupt, missing, or unknown-schema layout data is ignored safely.
+- Individual invalid coordinates fall back to a known visible position.
+- Fusion's `setSize` and `setPosition` results are verified through property
+  read-back because the methods can apply successfully while returning `false`.
+- Layout capture and restoration failures are logged and never block normal
+  palette startup, hiding, or add-in shutdown.
+
+### Known limitation
+
+- Fusion's public palette API does not safely preserve an exact stacked docking
+  relationship, such as Floating Parameters above a minimized Comments panel.
+  Use Fusion's docking controls to dock it manually after startup if desired.
+
 ## v1.5.5: Faster access and clearer highlighting
 
 This update makes the most common parameter workflow faster, improves

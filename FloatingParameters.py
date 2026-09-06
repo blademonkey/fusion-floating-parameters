@@ -3,6 +3,7 @@ import adsk.fusion
 import json
 import os
 from pathlib import Path
+import sys
 import traceback
 
 
@@ -15,18 +16,37 @@ COMMAND_ID = 'blademonkeyFloatingParametersCommand'
 COMMAND_NAME = 'Floating Parameters'
 COMMAND_DESCRIPTION = 'Show or hide the Floating Parameters palette.'
 COMMAND_RESOURCE_DIR = os.path.join(ADDIN_DIR, 'resources', 'command')
+RESET_COMMAND_ID = 'blademonkeyFloatingParametersResetLayoutCommand'
+RESET_COMMAND_NAME = 'Reset Floating Parameters Layout'
+RESET_COMMAND_DESCRIPTION = 'Return the Floating Parameters palette to a visible default position and size.'
+RESET_COMMAND_RESOURCE_DIR = os.path.join(ADDIN_DIR, 'resources', 'reset')
 UTILITIES_TOOLBAR_PANEL_ID = 'SolidScriptsAddinsPanel'
 SOLID_TOOLBAR_PANEL_ID = 'SolidModifyPanel'
+
+LAYOUT_SCHEMA_VERSION = 1
+DEFAULT_PALETTE_LEFT = 100
+DEFAULT_PALETTE_TOP = 100
+DEFAULT_PALETTE_WIDTH = 460
+DEFAULT_PALETTE_HEIGHT = 640
+MIN_PALETTE_WIDTH = 240
+MIN_PALETTE_HEIGHT = 180
+MAX_PALETTE_WIDTH = 4096
+MAX_PALETTE_HEIGHT = 4096
+MIN_PALETTE_POSITION = -32768
+MAX_PALETTE_POSITION = 32767
 
 handlers = []
 document_activated_handler = None
 active_selection_handler = None
 workspace_activated_handler = None
 command_created_handler = None
+reset_command_created_handler = None
 bloodhound_enabled = False
 ui_initialization_pending = False
 initial_palette_open_pending = False
 solid_toolbar_pending = False
+reset_toolbar_pending = False
+last_saved_layout = None
 
 
 def _log(message):
@@ -34,6 +54,205 @@ def _log(message):
         APP.log('Floating Parameters: {}'.format(message))
     except Exception:
         pass
+
+
+def _layout_preferences_path():
+    """Return a user-writable cross-platform path for palette layout state."""
+    if sys.platform == 'darwin':
+        base = Path.home() / 'Library' / 'Application Support'
+    else:
+        appdata = os.environ.get('APPDATA') or os.environ.get('LOCALAPPDATA')
+        base = Path(appdata) if appdata else Path.home()
+    return base / 'blademonkeyFloatingParameters' / 'layout.json'
+
+
+def _is_layout_integer(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _validated_layout_integer(value, minimum, maximum):
+    if not _is_layout_integer(value):
+        return None
+    if value < minimum or value > maximum:
+        return None
+    return value
+
+
+def _validate_palette_layout(raw):
+    """Return normalized usable layout fields, or None for unusable state."""
+    if not isinstance(raw, dict):
+        return None
+    if raw.get('schemaVersion') != LAYOUT_SCHEMA_VERSION:
+        return None
+    palette = raw.get('palette')
+    if not isinstance(palette, dict):
+        return None
+
+    mode = palette.get('mode')
+    if mode not in ('floating', 'docked'):
+        return None
+
+    width = _validated_layout_integer(
+        palette.get('width'), MIN_PALETTE_WIDTH, MAX_PALETTE_WIDTH
+    )
+    height = _validated_layout_integer(
+        palette.get('height'), MIN_PALETTE_HEIGHT, MAX_PALETTE_HEIGHT
+    )
+    left = _validated_layout_integer(
+        palette.get('left'), MIN_PALETTE_POSITION, MAX_PALETTE_POSITION
+    )
+    top = _validated_layout_integer(
+        palette.get('top'), MIN_PALETTE_POSITION, MAX_PALETTE_POSITION
+    )
+
+    # Preserve independently valid fields. Size is required, while position
+    # can fall back to a known reachable location if a saved monitor geometry
+    # is corrupt or implausible.
+    if width is None or height is None:
+        return None
+    if left is None:
+        left = DEFAULT_PALETTE_LEFT
+    if top is None:
+        top = DEFAULT_PALETTE_TOP
+
+    return {
+        'schemaVersion': LAYOUT_SCHEMA_VERSION,
+        'palette': {
+            'mode': mode,
+            'left': left,
+            'top': top,
+            'width': width,
+            'height': height
+        }
+    }
+
+
+def _load_palette_layout():
+    path = _layout_preferences_path()
+    try:
+        if not path.exists():
+            return None
+        with path.open('r', encoding='utf-8') as stream:
+            raw = json.load(stream)
+        layout = _validate_palette_layout(raw)
+        if layout is None:
+            _log('Ignoring invalid palette layout at {}.'.format(path))
+        return layout
+    except Exception as exc:
+        _log('Could not read palette layout from {}: {}'.format(path, exc))
+        return None
+
+
+def _write_palette_layout_atomic(layout):
+    path = _layout_preferences_path()
+    temporary = path.with_suffix(path.suffix + '.tmp')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with temporary.open('w', encoding='utf-8') as stream:
+            json.dump(layout, stream, indent=2, ensure_ascii=False)
+            stream.flush()
+            try:
+                os.fsync(stream.fileno())
+            except Exception:
+                pass
+        os.replace(str(temporary), str(path))
+    except Exception:
+        try:
+            if temporary.exists():
+                temporary.unlink()
+        except Exception:
+            pass
+        raise
+    return path
+
+
+def _palette_is_floating(palette):
+    try:
+        states = getattr(adsk.core, 'PaletteDockingStates', None)
+        floating_state = getattr(states, 'PaletteDockStateFloating', None)
+        return floating_state is not None and palette.dockingState == floating_state
+    except Exception:
+        return False
+
+
+def _capture_palette_layout(palette, reason='unknown'):
+    """Persist the latest readable layout without disrupting palette use."""
+    global last_saved_layout
+    if not palette:
+        return False
+    try:
+        raw = {
+            'schemaVersion': LAYOUT_SCHEMA_VERSION,
+            'palette': {
+                'mode': 'floating' if _palette_is_floating(palette) else 'docked',
+                'left': int(palette.left),
+                'top': int(palette.top),
+                'width': int(palette.width),
+                'height': int(palette.height)
+            }
+        }
+        layout = _validate_palette_layout(raw)
+        if layout is None:
+            _log('Did not save unusable palette layout during {}.'.format(reason))
+            return False
+        if layout == last_saved_layout:
+            return True
+        path = _write_palette_layout_atomic(layout)
+        last_saved_layout = layout
+        _log('Saved palette layout during {} to {}.'.format(reason, path))
+        return True
+    except Exception as exc:
+        _log('Could not save palette layout during {}: {}'.format(reason, exc))
+        return False
+
+
+def _restore_palette_layout(palette):
+    """Restore geometry once for a newly created palette, always as floating."""
+    global last_saved_layout
+    layout = _load_palette_layout()
+    if not layout or not palette:
+        return False
+
+    values = layout['palette']
+    try:
+        # Fusion's documented setPosition call makes a docked palette floating.
+        # This is intentional for layouts captured while docked because restoring
+        # dockingState rearranges native Browser and Comments panels.
+        palette.setSize(values['width'], values['height'])
+        palette.setPosition(values['left'], values['top'])
+
+        actual_width = int(palette.width)
+        actual_height = int(palette.height)
+        actual_left = int(palette.left)
+        actual_top = int(palette.top)
+        expected = (
+            values['width'], values['height'], values['left'], values['top']
+        )
+        actual = (actual_width, actual_height, actual_left, actual_top)
+        if actual != expected:
+            _log('Palette layout read-back differs; expected={}, actual={}.'.format(
+                expected, actual
+            ))
+        else:
+            _log('Restored {} palette layout as floating.'.format(values['mode']))
+        last_saved_layout = layout
+        return True
+    except Exception as exc:
+        _log('Could not restore palette layout: {}'.format(exc))
+        return False
+
+
+def _clear_saved_palette_layout():
+    global last_saved_layout
+    path = _layout_preferences_path()
+    try:
+        if path.exists():
+            path.unlink()
+        last_saved_layout = None
+        return True
+    except Exception as exc:
+        _log('Could not clear saved palette layout at {}: {}'.format(path, exc))
+        return False
 
 
 def _design():
@@ -559,6 +778,12 @@ class PaletteClosedHandler(adsk.core.UserInterfaceGeneralEventHandler):
     def notify(self, args):
         global initial_palette_open_pending
         initial_palette_open_pending = False
+        try:
+            _capture_palette_layout(
+                UI.palettes.itemById(PALETTE_ID), 'native palette close'
+            )
+        except Exception as exc:
+            _log('Palette-close layout capture failed: {}'.format(exc))
         _on_palette_hidden()
 
 
@@ -579,6 +804,8 @@ class DocumentActivatedHandler(adsk.core.DocumentEventHandler):
                 _ensure_ui_initialized('documentActivated')
             elif solid_toolbar_pending:
                 _retry_solid_toolbar_control('documentActivated')
+            if reset_toolbar_pending:
+                _ensure_reset_toolbar_control()
             palette = UI.palettes.itemById(PALETTE_ID)
             if palette and palette.isVisible:
                 _send('highlight', _empty_highlight())
@@ -590,13 +817,16 @@ class DocumentActivatedHandler(adsk.core.DocumentEventHandler):
 
 class WorkspaceActivatedHandler(adsk.core.WorkspaceEventHandler):
     def notify(self, args):
-        if not ui_initialization_pending and not solid_toolbar_pending:
+        if (not ui_initialization_pending and not solid_toolbar_pending and
+                not reset_toolbar_pending):
             return
         try:
             if ui_initialization_pending:
                 _ensure_ui_initialized('workspaceActivated')
-            else:
+            elif solid_toolbar_pending:
                 _retry_solid_toolbar_control('workspaceActivated')
+            if reset_toolbar_pending:
+                _ensure_reset_toolbar_control()
         except Exception as exc:
             _log('Workspace activation handling failed: {}'.format(exc))
 
@@ -633,6 +863,9 @@ def _ensure_palette_created():
         closed_handler = PaletteClosedHandler()
         palette.closed.add(closed_handler)
         handlers.append(closed_handler)
+
+        # Restoration is best effort and never part of UI readiness.
+        _restore_palette_layout(palette)
         return True
     except Exception:
         _log('Palette creation failed for {}:\n{}'.format(html_url, traceback.format_exc()))
@@ -662,6 +895,7 @@ def _set_palette_visible(visible):
 
     try:
         if not visible:
+            _capture_palette_layout(palette, 'toolbar hide')
             _on_palette_hidden()
         palette.isVisible = bool(visible)
         if bool(palette.isVisible) != bool(visible):
@@ -765,6 +999,7 @@ def _ensure_ui_initialized(trigger='unknown'):
         if command_ready else False
     )
     palette_ready = _ensure_palette_created()
+    _ensure_reset_toolbar_control()
 
     if initial_palette_open_pending and palette_ready:
         if _set_palette_visible(True):
@@ -825,9 +1060,94 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
         handlers.append(execute_handler)
 
 
+class ResetLayoutCommandExecuteHandler(adsk.core.CommandEventHandler):
+    def notify(self, args):
+        global initial_palette_open_pending
+        try:
+            _clear_saved_palette_layout()
+            if not _ensure_palette_created():
+                raise RuntimeError('Fusion could not create the palette.')
+            palette = UI.palettes.itemById(PALETTE_ID)
+            if not palette:
+                raise RuntimeError('The palette is unavailable after creation.')
+
+            # setPosition intentionally changes any docked palette to floating.
+            # Applying it before setSize prevents a dock from locking a size.
+            palette.setPosition(DEFAULT_PALETTE_LEFT, DEFAULT_PALETTE_TOP)
+            palette.setSize(DEFAULT_PALETTE_WIDTH, DEFAULT_PALETTE_HEIGHT)
+            palette.setPosition(DEFAULT_PALETTE_LEFT, DEFAULT_PALETTE_TOP)
+            if not _set_palette_visible(True):
+                raise RuntimeError('Fusion could not show the reset palette.')
+            initial_palette_open_pending = False
+            _capture_palette_layout(palette, 'layout reset')
+            UI.messageBox(
+                'Floating Parameters was reset to a visible floating position.',
+                'Reset Floating Parameters Layout'
+            )
+        except Exception:
+            UI.messageBox(
+                'Unable to reset Floating Parameters:\n\n' + traceback.format_exc()
+            )
+
+
+class ResetLayoutCommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
+    def notify(self, args):
+        execute_handler = ResetLayoutCommandExecuteHandler()
+        args.command.execute.add(execute_handler)
+        handlers.append(execute_handler)
+
+
+def _ensure_reset_toolbar_control():
+    """Create the optional Utilities recovery command without blocking startup."""
+    global reset_command_created_handler, reset_toolbar_pending
+    try:
+        definition = UI.commandDefinitions.itemById(RESET_COMMAND_ID)
+        if not definition:
+            definition = UI.commandDefinitions.addButtonDefinition(
+                RESET_COMMAND_ID,
+                RESET_COMMAND_NAME,
+                RESET_COMMAND_DESCRIPTION,
+                RESET_COMMAND_RESOURCE_DIR
+            )
+        else:
+            definition.resourceFolder = RESET_COMMAND_RESOURCE_DIR
+        if not definition:
+            reset_toolbar_pending = True
+            return False
+
+        if not reset_command_created_handler:
+            reset_command_created_handler = ResetLayoutCommandCreatedHandler()
+            definition.commandCreated.add(reset_command_created_handler)
+            handlers.append(reset_command_created_handler)
+
+        panel = UI.allToolbarPanels.itemById(UTILITIES_TOOLBAR_PANEL_ID)
+        if not panel:
+            reset_toolbar_pending = True
+            return False
+        control = panel.controls.itemById(RESET_COMMAND_ID)
+        if not control:
+            control = panel.controls.addCommand(definition)
+        if not control:
+            reset_toolbar_pending = True
+            return False
+
+        # Keep recovery visible even when the palette itself is off-screen.
+        control.isPromoted = True
+        control.isPromotedByDefault = True
+        reset_toolbar_pending = False
+        return True
+    except Exception:
+        reset_toolbar_pending = True
+        _log('Reset Layout control initialization failed:\n{}'.format(
+            traceback.format_exc()
+        ))
+        return False
+
+
 def run(context):
     global active_selection_handler, bloodhound_enabled, document_activated_handler
-    global initial_palette_open_pending, solid_toolbar_pending
+    global initial_palette_open_pending, reset_toolbar_pending
+    global solid_toolbar_pending
     global ui_initialization_pending
     global workspace_activated_handler
     try:
@@ -840,6 +1160,7 @@ def run(context):
         ui_initialization_pending = True
         initial_palette_open_pending = True
         solid_toolbar_pending = True
+        reset_toolbar_pending = True
 
         if not document_activated_handler:
             document_activated_handler = DocumentActivatedHandler()
@@ -865,6 +1186,7 @@ def run(context):
 
 def stop(context):
     global active_selection_handler, bloodhound_enabled, command_created_handler
+    global reset_command_created_handler, reset_toolbar_pending
     global document_activated_handler, initial_palette_open_pending
     global solid_toolbar_pending, ui_initialization_pending
     global workspace_activated_handler
@@ -873,6 +1195,7 @@ def stop(context):
         ui_initialization_pending = False
         initial_palette_open_pending = False
         solid_toolbar_pending = False
+        reset_toolbar_pending = False
         if active_selection_handler:
             UI.activeSelectionChanged.remove(active_selection_handler)
             active_selection_handler = None
@@ -887,6 +1210,10 @@ def stop(context):
 
         palette = UI.palettes.itemById(PALETTE_ID)
         if palette:
+            try:
+                _capture_palette_layout(palette, 'add-in stop')
+            except Exception as exc:
+                _log('Shutdown layout capture failed: {}'.format(exc))
             palette.deleteMe()
 
         for panel_id in (UTILITIES_TOOLBAR_PANEL_ID, SOLID_TOOLBAR_PANEL_ID):
@@ -899,8 +1226,18 @@ def stop(context):
         command_definition = UI.commandDefinitions.itemById(COMMAND_ID)
         if command_definition:
             command_definition.deleteMe()
+
+        reset_panel = UI.allToolbarPanels.itemById(UTILITIES_TOOLBAR_PANEL_ID)
+        if reset_panel:
+            reset_control = reset_panel.controls.itemById(RESET_COMMAND_ID)
+            if reset_control:
+                reset_control.deleteMe()
+        reset_definition = UI.commandDefinitions.itemById(RESET_COMMAND_ID)
+        if reset_definition:
+            reset_definition.deleteMe()
     except Exception:
         UI.messageBox('Floating Parameters failed to stop cleanly:\n\n' + traceback.format_exc())
     finally:
         command_created_handler = None
+        reset_command_created_handler = None
         handlers.clear()
